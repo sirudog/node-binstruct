@@ -150,7 +150,7 @@ function createInt64Reader(signed, littleEndian) {
 function createInt64Writer(signed, littleEndian) {
 	var writer = function writeInt64(val, offset, noAssert) {
 		// "this" is a Buffer
-		if(val instanceof 'number') {
+		if(val instanceof Number) {
 			var hi = val >> 32;
 			var lo = val & 0xFFFFFFFF;
 

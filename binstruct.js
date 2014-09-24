@@ -234,13 +234,11 @@ function setupDefiners() {
 				f.read = createStringReader(f.size);
 				f.write = createStringWriter(f.size);
 			} else if (typeof(arguments[1]) === 'object') {
-				console.log(arguments[1])
 				for (var p in arguments[1]) {
 					f[p] = arguments[1][p];
 				}
 				f.read = createStringReader(f.size);
 				f.write = createStringWriter(f.size);
-				console.log(f)
 			} else {
 				throw new Error('Unexpected argument ' + arguments[1] + ' with type ' + typeof(arguments[1]));
 			}

@@ -65,7 +65,7 @@ function StructDef(opts) {
 	};
 }
 
-StructDef.prototype.field = function defineField(f) {
+StructDef.prototype.field = function defineField(f, struct) {
 	var offset = f.offset = this.size;
 	this.size += f.size;
 	this.fields.push(f);
@@ -86,9 +86,37 @@ StructDef.prototype.field = function defineField(f) {
 		};
 	}
 	Object.defineProperty(this.Wrapper.prototype, name, desc);
-	Object.defineProperty(this, name, {value:f});
+	Object.defineProperty(this, name, { value: f});
+
 	return this;
 };
+
+
+function createBufferReader(size) {
+	var reader;
+	reader = function readbuffer(offset, noAssert, def, field) {
+		// "this" should be a Buffer
+		if(!Buffer.isBuffer(this)) throw new Error('Should be applied to a buffer!');
+		if(!noAssert && offset + size > this.length) {
+			throw new Error('Field runs beyond the length of the buffer.');
+		}
+		return this.slice(offset, offset + size);		
+	};
+	return reader;
+}
+
+function createBufferWriter(size) {
+	var writer = function writebuffer(val, offset, noAssert) {
+		// "this" is a Buffer
+		if(Buffer.isBuffer(val)) {
+			if(val.length != size) {
+				throw new Error('Buffer used as string field must be' + size + ' bytes long!');
+			}
+			val.copy(this, offset);
+		}
+	};
+	return writer;
+}
 
 function createStringReader(size) {
 	var reader;
@@ -210,6 +238,40 @@ function setupDefiners() {
 		};
 	}
 
+	function defBufferType() {
+		var lowerCaseTypeName = 'buffer';
+		var definer = function defineBufferField() {
+			var f = {
+				type: lowerCaseTypeName,
+				name: arguments[0],
+				size: 0,
+				read: undefined,
+				write: undefined
+			};
+			if (Buffer.isBuffer(arguments[1])) {
+				f.value = arguments[1];
+				f.size = arguments[1].length;
+				f.read = createBufferReader(f.size);
+				f.write = createBufferWriter(f.size);
+			} else if (typeof(arguments[1]) === 'int') {
+				f.size = arguments[1];
+				f.read = createBufferReader(f.size);
+				f.write = createBufferWriter(f.size);
+			} else if (typeof(arguments[1]) === 'object') {
+				for (var p in arguments[1]) {
+					f[p] = arguments[1][p];
+				}
+				f.read = createBufferReader(f.size);
+				f.write = createBufferWriter(f.size);
+			} else {
+				throw new Error('Unexpected argument ' + arguments[1] + ' with type ' + typeof(arguments[1]));
+			}
+			this.field(f);
+			return this;
+		};
+		StructDef.prototype[lowerCaseTypeName] = definer;
+	}
+
 	function defStringType() {
 		var lowerCaseTypeName = 'string';
 		var definer = function defineStringField() {
@@ -323,7 +385,10 @@ function setupDefiners() {
 	}
 
 	// Add string
-	defStringType();
+	defStringType();	
+
+	// Add buffer
+	defBufferType();
 }
 
 setupDefiners();

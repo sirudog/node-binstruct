@@ -98,7 +98,7 @@ function createStringReader(size) {
 		if(!noAssert && offset + size > this.length) {
 			throw new Error('Field runs beyond the length of the buffer.');
 		}
-		return this.toString();		
+		return this.toString('utf8', offset, offset + size);		
 	};
 	return reader;
 }
@@ -107,10 +107,11 @@ function createStringWriter(size) {
 	var writer = function writeString(val, offset, noAssert) {
 		// "this" is a Buffer
 		if(typeof(val) === 'string') {
+			this.fill(0, offset, offset + size);
 			this.write(val, offset, noAssert);
 		} else if(Buffer.isBuffer(val)) {
 			if(val.length != size) {
-				throw new Error('Buffer used as int64 field must be' + size + ' bytes long!');
+				throw new Error('Buffer used as string field must be' + size + ' bytes long!');
 			}
 			val.copy(this, offset);
 		}

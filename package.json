@@ -1,10 +1,10 @@
 {
     "name":"binstruct",
-    "version":"0.2.0",
+    "version":"0.3.0",
     "description":"Read/write binary data structures to/from buffers.",
     "keywords":["binary","bin","buffers","struct","unpack","pack","serialization"],
     "main":"binstruct",
-    "repository" : { "type" : "git", "url" : "http://github.com/dobesv/node-binstruct.git" },
+    "repository" : { "type" : "git", "url" : "http://github.com/vandrito/node-binstruct.git" },
     "files":["binstruct.js", "AUTHORS", "package.json", "Readme.md"],
-    "engines":{"node":">=0.6.0"}
+    "engines":{"node":">=0.10.0"}
 }

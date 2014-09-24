@@ -90,6 +90,34 @@ StructDef.prototype.field = function defineField(f) {
 	return this;
 };
 
+function createStringReader(size) {
+	var reader;
+	reader = function readString(offset, noAssert, def, field) {
+		// "this" should be a Buffer
+		if(!Buffer.isBuffer(this)) throw new Error('Should be applied to a buffer!');
+		if(!noAssert && offset + size > this.length) {
+			throw new Error('Field runs beyond the length of the buffer.');
+		}
+		return this.toString();		
+	};
+	return reader;
+}
+
+function createStringWriter(size) {
+	var writer = function writeString(val, offset, noAssert) {
+		// "this" is a Buffer
+		if(typeof(val) === 'string') {
+			this.write(val, offset, noAssert);
+		} else if(Buffer.isBuffer(val)) {
+			if(val.length != size) {
+				throw new Error('Buffer used as int64 field must be' + size + ' bytes long!');
+			}
+			val.copy(this, offset);
+		}
+	};
+	return writer;
+}
+
 function createInt64Reader(signed, littleEndian) {
 	var reader;
 	reader = function readInt64AsNumber(offset, noAssert, def, field) {
@@ -180,6 +208,48 @@ function setupDefiners() {
 			return this;
 		};
 	}
+
+	function defStringType() {
+		var lowerCaseTypeName = 'string';
+		var definer = function defineStringField() {
+			var f = {
+				type: lowerCaseTypeName,
+				name: arguments[0],
+				size: 0,
+				read: undefined,
+				write: undefined
+			};
+			if (Buffer.isBuffer(arguments[1])) {
+				f.value = arguments[1];
+				f.size = arguments[1].length;
+				f.read = createStringReader(f.size);
+				f.write = createStringWriter(f.size);
+			} else if (typeof(arguments[1]) === 'string') {
+				f.value = new Buffer(arguments[0]);
+				f.size = arguments[1].length;
+				f.read = createStringReader(f.size);
+				f.write = createStringWriter(f.size);
+			} else if (typeof(arguments[1]) === 'int') {
+				f.size = arguments[1];
+				f.read = createStringReader(f.size);
+				f.write = createStringWriter(f.size);
+			} else if (typeof(arguments[1]) === 'object') {
+				console.log(arguments[1])
+				for (var p in arguments[1]) {
+					f[p] = arguments[1][p];
+				}
+				f.read = createStringReader(f.size);
+				f.write = createStringWriter(f.size);
+				console.log(f)
+			} else {
+				throw new Error('Unexpected argument ' + arguments[1] + ' with type ' + typeof(arguments[1]));
+			}
+			this.field(f);
+			return this;
+		};
+		StructDef.prototype[lowerCaseTypeName] = definer;
+	}
+
 	function defNumberType(upperCaseTypeName, size, reader, writer) {
 		var readImpl = reader || Buffer.prototype['read'+upperCaseTypeName];
 		var writeImpl = writer || Buffer.prototype['write'+upperCaseTypeName];
@@ -252,6 +322,9 @@ function setupDefiners() {
 			defNumberTypeDefaultEndian(name.toLowerCase());
 		}
 	}
+
+	// Add string
+	defStringType();
 }
 
 setupDefiners();

@@ -253,7 +253,7 @@ function setupDefiners() {
 				f.size = arguments[1].length;
 				f.read = createBufferReader(f.size);
 				f.write = createBufferWriter(f.size);
-			} else if (typeof(arguments[1]) === 'int') {
+			} else if (typeof(arguments[1]) === 'number') {
 				f.size = arguments[1];
 				f.read = createBufferReader(f.size);
 				f.write = createBufferWriter(f.size);

@@ -1,4 +1,3 @@
-
 //
 // int64/uint64 support is limited in javascript.  Each struct can specify
 // a strategy for handling 64-bit values that occur in the data definition
@@ -8,6 +7,7 @@
 // lossy: Create a js 'number'; use Infinity or -Infinity if it doesn't fit
 // copy: Read 64-bit number into an 8-byte buffer
 // slice: Return an 8-byte "slice" of the original buffer
+// int64: Return an int64 implementation, currently set to bignumber.js package
 // skip: Ignore 64-bit fields altogether
 //
 var int64modes = exports.int64modes = {
@@ -19,6 +19,19 @@ var int64modes = exports.int64modes = {
 	skip:'skip'
 };
 
+var BigNumber = null;
+
+function validateInt64Mode(int64mode) {
+	if (int64mode in int64modes) {
+		if (int64mode === int64modes.int64 && BigNumber == null) {
+			BigNumber = require('bignumber.js');
+		}
+	}
+	else {
+		throw new Error('Unsupported int64mode: ' + int64mode);
+	}
+}
+
 //
 // Create a struct def
 //
@@ -29,6 +42,7 @@ function StructDef(opts) {
 	this.littleEndian = !!(opts && opts.littleEndian);
 	this.noAssert = !!(opts && opts.noAssert);
 	if(opts && 'int64mode' in opts) {
+		validateInt64Mode(opts.int64mode);
 		this.int64mode = opts.int64mode;
 	} else {
 		this.int64mode = int64modes.strict;
@@ -37,9 +51,9 @@ function StructDef(opts) {
 		Object.defineProperty(this, '_buffer', {value:buf});
 	};
 	Object.defineProperty(this.Wrapper.prototype,
-			'_def', {value:this,writable:false});
+		'_def', {value:this,writable:false});
 	Object.defineProperty(this.Wrapper.prototype,
-			'_fields', {get:function() { return this._def.fields; }});
+		'_fields', {get:function() { return this._def.fields; }});
 
 	// Check if each field equals its default value
 	this.Wrapper.prototype.checkValues = function() {
@@ -91,7 +105,6 @@ StructDef.prototype.field = function defineField(f, struct) {
 	return this;
 };
 
-
 function createBufferReader(size) {
 	var reader;
 	reader = function readbuffer(offset, noAssert, def, field) {
@@ -100,7 +113,7 @@ function createBufferReader(size) {
 		if(!noAssert && offset + size > this.length) {
 			throw new Error('Field runs beyond the length of the buffer.');
 		}
-		return this.slice(offset, offset + size);		
+		return this.slice(offset, offset + size);
 	};
 	return reader;
 }
@@ -126,7 +139,7 @@ function createStringReader(size) {
 		if(!noAssert && offset + size > this.length) {
 			throw new Error('Field runs beyond the length of the buffer.');
 		}
-		return this.toString('utf8', offset, offset + size);		
+		return this.toString('utf8', offset, offset + size);
 	};
 	return reader;
 }
@@ -136,7 +149,7 @@ function createStringWriter(size) {
 		// "this" is a Buffer
 		if(typeof(val) === 'string') {
 			this.fill(0, offset, offset + size);
-			this.write(val, offset, noAssert);
+			this.write(val, offset);
 		} else if(Buffer.isBuffer(val)) {
 			if(val.length != size) {
 				throw new Error('Buffer used as string field must be' + size + ' bytes long!');
@@ -156,63 +169,91 @@ function createInt64Reader(signed, littleEndian) {
 			throw new Error('Field runs beyond the length of the buffer.');
 		}
 		var int64mode = field.int64mode || def.int64mode || int64modes.strict;
-		if(int64mode === 'lossy number' || int64mode === 'strict number') {
-			var hi, lo;
+		validateInt64Mode(int64mode);
 
-			if(littleEndian) {
-				hi = this.readUInt32LE(offset+4, noAssert);
-				lo = this.readUInt32LE(offset+0, noAssert);
-			} else {
-				hi = this.readUInt32BE(offset+0, noAssert);
-				lo = this.readUInt32BE(offset+4, noAssert);
-			}
+		switch (int64mode) {
+			case int64modes.int64:
+			case int64modes.lossy:
+			case int64modes.strict:
+				var hi, lo;
 
-			// Does it fit in a the 53-bits supported by javascript numbers?
-			// hi contains the upper 32 bits, only 21 of which can be used,
-			// or 20 for unsigned numbers.
-			var lostBits = hi & 0xFFF00000;
-			// If the lost bits are all zero we're OK
-			// Also for a signed negative number the lost bits can be all
-			// one and we're OK
-			if(lostBits !== 0 && (!signed || lostBits !== 0xFFF00000)) {
-				// If the mode is "strict" then verify we don't lose any bits when
-				// we truncate the number to fit into a floating point number.
-				if(int64mode === 'strict number') {
-					// Data will be lost ... !
-					throw new Error('64-bit number too large for javascript number data type; bytes: '+this.toString('hex', offset, offset+8)+(littleEndian?' (little endian)':' (big endian)'));
+				if(littleEndian) {
+					hi = this.readUInt32LE(offset+4, noAssert);
+					lo = this.readUInt32LE(offset+0, noAssert);
 				} else {
-					if(!signed || (hi & 0x80000000) == 0) {
-						return Infinity;
+					hi = this.readUInt32BE(offset+0, noAssert);
+					lo = this.readUInt32BE(offset+4, noAssert);
+				}
+
+				if (int64mode === int64modes.int64) {
+					return new BigNumber(lo).plus(new BigNumber(hi).times(0x100000000));
+				}
+
+				// Does it fit in a the 53-bits supported by javascript numbers?
+				// hi contains the upper 32 bits, only 21 of which can be used,
+				// or 20 for unsigned numbers.
+				var lostBits = hi & 0xFFF00000;
+				// If the lost bits are all zero we're OK
+				// Also for a signed negative number the lost bits can be all
+				// one and we're OK
+				if(lostBits !== 0 && (!signed || lostBits !== 0xFFF00000)) {
+					// If the mode is "strict" then verify we don't lose any bits when
+					// we truncate the number to fit into a floating point number.
+					if(int64mode === int64modes.strict) {
+						// Data will be lost ... !
+						throw new Error('64-bit number too large for javascript number data type; bytes: '+this.toString('hex', offset, offset+8)+(littleEndian?' (little endian)':' (big endian)'));
 					} else {
-						return -Infinity;
+						if(!signed || (hi & 0x80000000) == 0) {
+							return Infinity;
+						} else {
+							return -Infinity;
+						}
 					}
 				}
-			}
 
-			return ((hi & 0x001FFFFF) << 32) | lo & 0xFFFFFFFF;
-		} else if(int64mode === 'slice buffer') {
-			return this.slice(offset, offset+8);
-		} else if(int64mode === 'copy buffer') {
-			var result = new Buffer(8);
-			this.copy(result, 0, offset, offset+8);
-			return result;
-		} else if(int64mode === 'skip') {
-		} else {
-			throw new Error('Unsupported int64mode: '+int64mode);
+				// TODO CHECK IF THIS IS OK, shifting 32 bits to left???
+				return ((hi & 0x001FFFFF) << 32) | lo & 0xFFFFFFFF;
+			case int64modes.slice:
+				return this.slice(offset, offset+8);
+			case int64modes.copy:
+				var result = new Buffer(8);
+				this.copy(result, 0, offset, offset + 8);
+				return result;
 		}
 	};
+
 	return reader;
 };
 
 function createInt64Writer(signed, littleEndian) {
 	var writer = function writeInt64(val, offset, noAssert) {
 		// "this" is a Buffer
-		if(val instanceof Number) {
-			var hi = val >> 32;
-			var lo = val & 0xFFFFFFFF;
 
-			this.writeUInt32(hi, offset+(littleEndian?4:0), noAssert);
-			this.writeUInt32(lo, offset+(littleEndian?0:4), noAssert);
+		if ((BigNumber != null && val instanceof BigNumber) || typeof(val) === 'number') {
+			var hi, lo;
+
+			if (val instanceof BigNumber) {
+				var zeroInt64Binary = '0000000000000000000000000000000000000000000000000000000000000000';
+				var valAsBinary = (zeroInt64Binary + val.toString(2)).slice(-64);
+
+				hi = parseInt(valAsBinary.substring(0, 32), 2);
+				lo = parseInt(valAsBinary.substring(32), 2);
+
+			} else {
+				// TODO CHECK IF THIS IS OK, shifting 32 bits to right???
+				hi = val >> 32;
+				lo = val & 0xFFFFFFFF;
+			}
+
+			if(littleEndian) {
+				this.writeUInt32LE(hi, offset+4, noAssert);
+				this.writeUInt32LE(lo, offset+0, noAssert);
+			}
+			else {
+				this.writeUInt32BE(hi, offset+0, noAssert);
+				this.writeUInt32BE(lo, offset+4, noAssert);
+			}
+
 		} else if(Buffer.isBuffer(val)) {
 			if(val.length != 8) {
 				throw new Error('Buffer used as int64 field must be 8 bytes long!');
@@ -292,7 +333,7 @@ function setupDefiners() {
 				f.size = arguments[1].length;
 				f.read = createStringReader(f.size);
 				f.write = createStringWriter(f.size);
-			} else if (typeof(arguments[1]) === 'int') {
+			} else if (typeof(arguments[1]) === 'number') {
 				f.size = arguments[1];
 				f.read = createStringReader(f.size);
 				f.write = createStringWriter(f.size);
@@ -385,7 +426,7 @@ function setupDefiners() {
 	}
 
 	// Add string
-	defStringType();	
+	defStringType();
 
 	// Add buffer
 	defBufferType();
@@ -401,42 +442,63 @@ StructDef.prototype.checkSize = function(expectedSize) {
 };
 
 StructDef.prototype.wrap = function wrapBuf(buf) {
-	var wrapper = new (this.Wrapper)(buf);
-	return wrapper;
+	return new (this.Wrapper)(buf);
 };
 
-StructDef.prototype.unpack = StructDef.prototype.read = function readFieldsFromBuf(buf, offset, noAssert) {
+StructDef.prototype.unpack = StructDef.prototype.read = function readFieldsFromBuf(buf, targetObjectCtor, offset, noAssert) {
 	var data = {};
-	if(typeof(noAssert) === 'undefined') {
+	var self = this;
+
+	if(noAssert == null) {
 		noAssert = this.noAssert;
 	}
-	if(typeof(offset) === 'undefined') {
+
+	if(offset == null) {
 		offset = 0;
 	}
+
 	this.fields.forEach(function readField(f) {
 		var readImpl = f.read;
 		if(readImpl) {
-			data[f.name] = readImpl.apply(buf, [offset + f.offset, noAssert]);
+			var fieldValue = readImpl.apply(buf, [offset + f.offset, noAssert, self, f]);
+
+			if (typeof(f.name) !== 'number') {
+				// skip default filler fields, whose name is integer 1, 2, ...
+				data[f.name] = fieldValue;
+			}
 		}
 	});
-	return data;
+
+	if(targetObjectCtor == null) {
+		return data;
+	}
+
+	var newTargetObj = Object.create(targetObjectCtor.prototype);
+	targetObjectCtor.apply(newTargetObj, Object.keys(data).map(function(key){ return data[key]; }));
+
+	return newTargetObj;
 };
 
 StructDef.prototype.pack = StructDef.prototype.write = function writeFieldsIntoBuf(data, buf, offset, noAssert) {
-	if(typeof(noAssert) === 'undefined') {
+	if(noAssert == null) {
 		noAssert = this.noAssert;
 	}
-	if(typeof(offset) === 'undefined') {
+
+	if(offset == null) {
 		offset = 0;
 	}
-	if(typeof(buf) === 'undefined') {
+
+	if(buf == null) {
 		buf = new Buffer(this.size + offset);
 	}
-	if(typeof(data) == 'undefined') {
+
+	if(data == null) {
 		data = {}; // Write all zeroes and defaults
 	}
+
 	this.fields.forEach(function writeField(f) {
 		var writeImpl = f.write;
+
 		if(writeImpl) {
 			var value = (f.name in data ? data[f.name] : f.value) || 0;
 			writeImpl.apply(buf, [value, offset + f.offset, noAssert]);
@@ -446,8 +508,5 @@ StructDef.prototype.pack = StructDef.prototype.write = function writeFieldsIntoB
 };
 
 exports.def = function createNewStructDef(opts) {
-	var def = new StructDef(opts);
-
-	return def;
+	return new StructDef(opts);
 };
-

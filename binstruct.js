@@ -11,12 +11,12 @@
 // skip: Ignore 64-bit fields altogether
 //
 var int64modes = exports.int64modes = {
-	strict:'strict number',
-	lossy:'lossy number',
-	copy:'copy buffer',
-	slice:'slice buffer',
-	int64:'int64',
-	skip:'skip'
+	strict: 'strict',
+	lossy:  'lossy',
+	copy:   'copy',
+	slice:  'slice',
+	int64:  'int64',
+	skip:   'skip'
 };
 
 var BigNumber = null;
@@ -38,6 +38,7 @@ function validateInt64Mode(int64mode) {
 function StructDef(opts) {
 	this.name = opts && opts.name;
 	this.fields = [];
+	this.staticSized = true;
 	this.size = 0;
 	this.littleEndian = !!(opts && opts.littleEndian);
 	this.noAssert = !!(opts && opts.noAssert);
@@ -80,27 +81,33 @@ function StructDef(opts) {
 }
 
 StructDef.prototype.field = function defineField(f, struct) {
-	var offset = f.offset = this.size;
-	this.size += f.size;
-	this.fields.push(f);
+	if (this.fields.find(function(field) {
+			return field.name === f.name;
+		}) == undefined) {
+		f.offset = this.size;
+		this.size += f.size;
+		this.fields.push(f);
+	}
+
 	var desc = {
-		enumerable:true
+		enumerable: true,
+		configurable: f.hasOwnProperty("sizeFieldName")
 	};
-	var name = f.name;
-	var readImpl = f.read;
-	if(readImpl) {
+
+	if(f.read) {
 		desc.get = function() {
-			return readImpl.apply(this._buffer, [offset, this.noAssert, this, f]);
+			return f.read.apply(this._buffer, [f.offset, this.noAssert, this, f]);
 		};
 	}
-	var writeImpl = f.write;
-	if(writeImpl) {
+
+	if(f.write) {
 		desc.set = function(value) {
-			return writeImpl.apply(this._buffer, [value, offset, this.noAssert, this, f]);
+			return f.write.apply(this._buffer, [value, f.offset, this.noAssert, this, f]);
 		};
 	}
-	Object.defineProperty(this.Wrapper.prototype, name, desc);
-	Object.defineProperty(this, name, { value: f});
+
+	Object.defineProperty(this.Wrapper.prototype, f.name, desc);
+	Object.defineProperty(this, f.name, { value: f, configurable: f.hasOwnProperty("sizeFieldName")});
 
 	return this;
 };
@@ -329,10 +336,22 @@ function setupDefiners() {
 				f.read = createStringReader(f.size);
 				f.write = createStringWriter(f.size);
 			} else if (typeof(arguments[1]) === 'string') {
-				f.value = new Buffer(arguments[0]);
-				f.size = arguments[1].length;
-				f.read = createStringReader(f.size);
-				f.write = createStringWriter(f.size);
+				var sizeIndicatorFieldName = arguments[1];
+				var sizeIndicatorField = this.fields.find(function(field) {
+					return field.name === sizeIndicatorFieldName;
+				});
+
+				if (sizeIndicatorField == undefined) {
+					// the passed second arg is the value of the field itself
+					f.value = new Buffer(arguments[1]);
+					f.size = arguments[1].length;
+					f.read = createStringReader(f.size);
+					f.write = createStringWriter(f.size);
+				}
+				else {
+					f.sizeFieldName = sizeIndicatorField.name;
+					this.staticSized = false;
+				}
 			} else if (typeof(arguments[1]) === 'number') {
 				f.size = arguments[1];
 				f.read = createStringReader(f.size);
@@ -447,7 +466,6 @@ StructDef.prototype.wrap = function wrapBuf(buf) {
 
 StructDef.prototype.unpack = StructDef.prototype.read = function readFieldsFromBuf(buf, targetObjectCtor, offset, noAssert) {
 	var data = {};
-	var self = this;
 
 	if(noAssert == null) {
 		noAssert = this.noAssert;
@@ -458,16 +476,25 @@ StructDef.prototype.unpack = StructDef.prototype.read = function readFieldsFromB
 	}
 
 	this.fields.forEach(function readField(f) {
+		if (f.sizeFieldName) {
+			this.size += data[f.sizeFieldName] - f.size;
+			f.size = data[f.sizeFieldName];
+			f.read = createStringReader(f.size);
+			f.write = createStringWriter(f.size);
+
+			this.field(f);
+		}
+
 		var readImpl = f.read;
 		if(readImpl) {
-			var fieldValue = readImpl.apply(buf, [offset + f.offset, noAssert, self, f]);
+			var fieldValue = readImpl.apply(buf, [offset + f.offset, noAssert, this, f]);
 
 			if (typeof(f.name) !== 'number') {
 				// skip default filler fields, whose name is integer 1, 2, ...
 				data[f.name] = fieldValue;
 			}
 		}
-	});
+	}, this);
 
 	if(targetObjectCtor == null) {
 		return data;
@@ -480,6 +507,29 @@ StructDef.prototype.unpack = StructDef.prototype.read = function readFieldsFromB
 };
 
 StructDef.prototype.pack = StructDef.prototype.write = function writeFieldsIntoBuf(data, buf, offset, noAssert) {
+	if(data == null) {
+		data = {}; // Write all zeroes and defaults
+	}
+
+	if (!this.staticSized) {
+		var variableSizedField = this.fields.find(function(field) {
+			return field.sizeFieldName != undefined;
+		});
+
+		var sizeIndicatiorField = this.fields.find(function(field) {
+			return field.name === variableSizedField.sizeFieldName;
+		});
+
+		var sizeIndicatiorFieldValue = (sizeIndicatiorField.name in data ? data[sizeIndicatiorField.name] : sizeIndicatiorField.value) || 0;
+
+		this.size += sizeIndicatiorFieldValue - variableSizedField.size;
+		variableSizedField.size = sizeIndicatiorFieldValue;
+		variableSizedField.read = createStringReader(variableSizedField.size);
+		variableSizedField.write = createStringWriter(variableSizedField.size);
+
+		this.field(variableSizedField);
+	}
+
 	if(noAssert == null) {
 		noAssert = this.noAssert;
 	}
@@ -490,10 +540,6 @@ StructDef.prototype.pack = StructDef.prototype.write = function writeFieldsIntoB
 
 	if(buf == null) {
 		buf = new Buffer(this.size + offset);
-	}
-
-	if(data == null) {
-		data = {}; // Write all zeroes and defaults
 	}
 
 	this.fields.forEach(function writeField(f) {
@@ -510,3 +556,27 @@ StructDef.prototype.pack = StructDef.prototype.write = function writeFieldsIntoB
 exports.def = function createNewStructDef(opts) {
 	return new StructDef(opts);
 };
+
+// polyfill for array.find
+if (!Array.prototype.find) {
+	Array.prototype.find = function(predicate) {
+		if (this === null) {
+			throw new TypeError('Array.prototype.find called on null or undefined');
+		}
+		if (typeof predicate !== 'function') {
+			throw new TypeError('predicate must be a function');
+		}
+		var list = Object(this);
+		var length = list.length >>> 0;
+		var thisArg = arguments[1];
+		var value;
+
+		for (var i = 0; i < length; i++) {
+			value = list[i];
+			if (predicate.call(thisArg, value, i, list)) {
+				return value;
+			}
+		}
+		return undefined;
+	};
+}

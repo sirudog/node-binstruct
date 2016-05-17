@@ -291,6 +291,19 @@ assert.throws(function() {
 	binstruct.def().uint16(0x0102).checkSize(7);
 });
 
+// Test buffer values
+var bufferTestDef = binstruct.def()
+	.buffer("a", 16);
+
+var bufferTestData = {
+	"a": new Buffer([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16])
+}
+
+var bufferTestBuffer = bufferTestDef.pack(bufferTestData);
+var actualBufferTestData = bufferTestDef.unpack(bufferTestBuffer);
+
+assert.deepEqual(bufferTestData.a, actualBufferTestData.a);
+
 //Test string values
 var stringTestDef = binstruct.def()
                         .string("a", 16)

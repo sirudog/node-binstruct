@@ -1,12 +1,12 @@
 {
     "name": "binstruct3",
-    "version": "0.6.2",
+    "version": "0.6.3",
     "description": "Read/write binary data structures to/from buffers.",
-    "repository" : {
-        "type" : "git",
-        "url" : "https://github.com/sirudog/node-binstruct.git"
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/sirudog/node-binstruct.git"
     },
-    "main":"binstruct",
+    "main": "binstruct",
     "files": [
         "binstruct.js",
         "AUTHORS",
@@ -14,10 +14,10 @@
         "Readme.md"
     ],
     "engines": {
-        "node":">=0.10.0"
+        "node": ">=6.10.2"
     },
     "optionalDependencies": {
-        "bignumber.js": "2.1.1"
+        "bignumber.js": "4.1.0"
     },
     "keywords": [
         "binary",

@@ -500,8 +500,7 @@ StructDef.prototype.unpack = StructDef.prototype.read = function readFieldsFromB
 		return data;
 	}
 
-	var newTargetObj = Object.create(targetObjectCtor.prototype);
-	targetObjectCtor.apply(newTargetObj, Object.keys(data).map(function(key){ return data[key]; }));
+    var newTargetObj = Reflect.construct(targetObjectCtor, Object.keys(data).map(function(key){ return data[key]; }));
 
 	return newTargetObj;
 };

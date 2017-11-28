@@ -1,6 +1,5 @@
 test/
 .settings/
 .git/
-.project
 .npmignore
 .idea

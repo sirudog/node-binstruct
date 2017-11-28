@@ -21,8 +21,7 @@ getters/setters for fields update and read the buffer in place.
 
 ## Requirements
 
-This module requires node 0.6 or better, as it uses the binary type
-read/write methods on Buffer introduced with node 0.6.
+This module requires node 6.10.2 or better, as it uses ES6 target.
 
 ## Numeric Types
 
@@ -203,7 +202,7 @@ the end of your definition.  For example:
 
 Install using npm:
 
-    npm install binstruct
+    npm install binstruct3
 
 ## Future work
 

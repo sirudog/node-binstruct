@@ -326,3 +326,17 @@ assert.equal("ConstValue", actualStringTestData.b);
 assert.equal(stringTestData.lenght_of_d, actualStringTestData.lenght_of_d);
 assert.equal(stringTestData.d, actualStringTestData.d);
 
+// Test unpacking ArrayBuffer values
+var arrayBufferTestDef = binstruct.def()
+    .buffer("a", 16);
+
+var arrayBufferTestData = {
+    "a": new Buffer([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16])
+}
+
+var arrayBufferTestBuffer = arrayBufferTestDef.pack(bufferTestData);
+// get the ArrayBuffer from the packed Buffer, which is unpacked later
+var arrayBufferTestArrayBuffer = arrayBufferTestBuffer.buffer;
+var actualArrayBufferTestData = arrayBufferTestDef.unpack(arrayBufferTestArrayBuffer);
+
+assert.deepEqual(arrayBufferTestData.a, actualArrayBufferTestData.a);

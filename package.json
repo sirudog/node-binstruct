@@ -1,6 +1,6 @@
 {
     "name": "binstruct3",
-    "version": "0.6.4",
+    "version": "0.6.5",
     "description": "Read/write binary data structures to/from buffers.",
     "repository": {
         "type": "git",

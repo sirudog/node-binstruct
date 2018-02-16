@@ -115,45 +115,43 @@ StructDef.prototype.field = function defineField(f, struct) {
 function createBufferReader(size) {
 	var reader;
 	reader = function readbuffer(offset, noAssert, def, field) {
-		// "this" should be a Buffer
-		if(!Buffer.isBuffer(this)) throw new Error('Should be applied to a buffer!');
 		if(!noAssert && offset + size > this.length) {
 			throw new Error('Field runs beyond the length of the buffer.');
 		}
+
 		return this.slice(offset, offset + size);
 	};
+
 	return reader;
 }
 
 function createBufferWriter(size) {
 	var writer = function writebuffer(val, offset, noAssert) {
-		// "this" is a Buffer
-		if(Buffer.isBuffer(val)) {
-			if(val.length != size) {
-				throw new Error('Buffer used as string field must be' + size + ' bytes long!');
-			}
-			val.copy(this, offset);
+		if(val.length != size) {
+			throw new Error('Buffer field must be' + size + ' bytes long!');
 		}
+
+		val.copy(this, offset);
 	};
+
 	return writer;
 }
 
 function createStringReader(size) {
 	var reader;
 	reader = function readString(offset, noAssert, def, field) {
-		// "this" should be a Buffer
-		if(!Buffer.isBuffer(this)) throw new Error('Should be applied to a buffer!');
 		if(!noAssert && offset + size > this.length) {
 			throw new Error('Field runs beyond the length of the buffer.');
 		}
+
 		return this.toString('utf8', offset, offset + size);
 	};
+
 	return reader;
 }
 
 function createStringWriter(size) {
 	var writer = function writeString(val, offset, noAssert) {
-		// "this" is a Buffer
 		if(typeof(val) === 'string') {
 			this.fill(0, offset, offset + size);
 			this.write(val, offset);
@@ -161,20 +159,21 @@ function createStringWriter(size) {
 			if(val.length != size) {
 				throw new Error('Buffer used as string field must be' + size + ' bytes long!');
 			}
+
 			val.copy(this, offset);
 		}
 	};
+
 	return writer;
 }
 
 function createInt64Reader(signed, littleEndian) {
 	var reader;
 	reader = function readInt64AsNumber(offset, noAssert, def, field) {
-		// "this" should be a Buffer
-		if(!Buffer.isBuffer(this)) throw new Error('Should be applied to a buffer!');
 		if(!noAssert && offset + 8 > this.length) {
 			throw new Error('Field runs beyond the length of the buffer.');
 		}
+
 		var int64mode = field.int64mode || def.int64mode || int64modes.strict;
 		validateInt64Mode(int64mode);
 
@@ -230,12 +229,10 @@ function createInt64Reader(signed, littleEndian) {
 	};
 
 	return reader;
-};
+}
 
 function createInt64Writer(signed, littleEndian) {
 	var writer = function writeInt64(val, offset, noAssert) {
-		// "this" is a Buffer
-
 		if ((BigNumber != null && val instanceof BigNumber) || typeof(val) === 'number') {
 			var hi, lo;
 
@@ -265,11 +262,13 @@ function createInt64Writer(signed, littleEndian) {
 			if(val.length != 8) {
 				throw new Error('Buffer used as int64 field must be 8 bytes long!');
 			}
+
 			val.copy(this, offset);
 		}
 	};
+
 	return writer;
-};
+}
 
 function setupDefiners() {
 	function defNumberTypeDefaultEndian(nameNoEndian) {
@@ -465,6 +464,14 @@ StructDef.prototype.wrap = function wrapBuf(buf) {
 };
 
 StructDef.prototype.unpack = StructDef.prototype.read = function readFieldsFromBuf(buf, targetObjectCtor, offset, noAssert) {
+    if (global.ArrayBuffer && buf instanceof ArrayBuffer) {
+    	buf = new Buffer(buf);
+	}
+
+	if(!Buffer.isBuffer(buf)) {
+    	throw new Error('Only buffers can be unpacked');
+    }
+
 	var data = {};
 
 	if(noAssert == null) {
@@ -537,9 +544,12 @@ StructDef.prototype.pack = StructDef.prototype.write = function writeFieldsIntoB
 		offset = 0;
 	}
 
-	if(buf == null) {
-		buf = new Buffer(this.size + offset);
-	}
+    if(buf == null) {
+        buf = new Buffer(this.size + offset);
+    }
+    else if(!Buffer.isBuffer(buf)) {
+        throw new Error('Data can only be packed into buffers');
+    }
 
 	this.fields.forEach(function writeField(f) {
 		var writeImpl = f.write;
@@ -549,6 +559,7 @@ StructDef.prototype.pack = StructDef.prototype.write = function writeFieldsIntoB
 			writeImpl.apply(buf, [value, offset + f.offset, noAssert]);
 		}
 	});
+
 	return buf;
 };
 
